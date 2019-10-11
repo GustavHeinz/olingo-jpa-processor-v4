@@ -64,6 +64,8 @@
 					<artifactId>maven-surefire-plugin</artifactId>
 					<version>3.0.0-M2</version>
 					<configuration>
+						<skipTests>true</skipTests>
+						<argLine>-Duser.language=en -Duser.region=GB</argLine>
 						<properties>
 							<configurationParameters>
 								junit.platform.output.capture.stdout = false
