@@ -1,13 +1,14 @@
 package com.sap.olingo.jpa.processor.core.processor;
 
-import java.lang.reflect.Constructor;
-import java.lang.reflect.InvocationTargetException;
-import java.lang.reflect.Parameter;
-import java.util.ArrayList;
-import java.util.List;
-import java.util.Map;
-
+import com.sap.olingo.jpa.metadata.core.edm.mapper.api.JPAAction;
+import com.sap.olingo.jpa.metadata.core.edm.mapper.api.JPAParameter;
+import com.sap.olingo.jpa.metadata.core.edm.mapper.exception.ODataJPAModelException;
+import com.sap.olingo.jpa.processor.core.api.JPAODataCRUDContextAccess;
+import com.sap.olingo.jpa.processor.core.api.JPAODataRequestContextAccess;
+import com.sap.olingo.jpa.processor.core.exception.ODataJPAProcessorException;
+import com.sap.olingo.jpa.processor.core.modify.JPAConversionHelper;
 import org.apache.olingo.commons.api.data.Annotatable;
+import org.apache.olingo.commons.api.data.ValueType;
 import org.apache.olingo.commons.api.edm.EdmType;
 import org.apache.olingo.commons.api.ex.ODataException;
 import org.apache.olingo.commons.api.format.ContentType;
@@ -21,19 +22,57 @@ import org.apache.olingo.server.api.uri.UriResource;
 import org.apache.olingo.server.api.uri.UriResourceAction;
 import org.apache.olingo.server.api.uri.UriResourceEntitySet;
 
-import com.sap.olingo.jpa.metadata.core.edm.mapper.api.JPAAction;
-import com.sap.olingo.jpa.metadata.core.edm.mapper.api.JPAParameter;
-import com.sap.olingo.jpa.metadata.core.edm.mapper.exception.ODataJPAModelException;
-import com.sap.olingo.jpa.processor.core.api.JPAODataRequestContextAccess;
-import com.sap.olingo.jpa.processor.core.api.JPAODataCRUDContextAccess;
-import com.sap.olingo.jpa.processor.core.exception.ODataJPAProcessorException;
-import com.sap.olingo.jpa.processor.core.modify.JPAConversionHelper;
+import java.io.UnsupportedEncodingException;
+import java.lang.reflect.Constructor;
+import java.lang.reflect.InvocationTargetException;
+import java.lang.reflect.Parameter;
+import java.net.URLDecoder;
+import java.nio.charset.StandardCharsets;
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.logging.Level;
+import java.util.logging.Logger;
+
+/**
+ * We have overwritten this class to implement new features. Currently, the following changes exist:
+ * BAO-609: implement bindRequestQueryParameters to bind URL query parameters to @EdmParameter parameters
+ */
 
 public class JPAActionRequestProcessor extends JPAOperationRequestProcessor {
+  private static Logger log = Logger.getLogger(JPAActionRequestProcessor.class.getName());
 
   public JPAActionRequestProcessor(final OData odata, final JPAODataCRUDContextAccess sessionContext,
       final JPAODataRequestContextAccess requestContext) throws ODataException {
     super(odata, sessionContext, requestContext);
+  }
+
+  private Map<String, org.apache.olingo.commons.api.data.Parameter> bindRequestQueryParameters(final ODataRequest request, Map<String, org.apache.olingo.commons.api.data.Parameter> actionParameter) {
+    Map<String, org.apache.olingo.commons.api.data.Parameter> resultParameters = new HashMap<>(actionParameter);
+    String rawQueryPath = request.getRawQueryPath();
+    if (rawQueryPath == null) {
+      return resultParameters;
+    }
+    String[] queryParameters = rawQueryPath.split("&");
+    for (String queryParameter : queryParameters) {
+      String[] parameterParts = queryParameter.split("=");
+
+      String key = "";
+      String value = "";
+      try {
+        key = URLDecoder.decode(parameterParts[0], StandardCharsets.UTF_8.name());
+        value = URLDecoder.decode(parameterParts[1], StandardCharsets.UTF_8.name());
+      } catch (UnsupportedEncodingException e) {
+        log.log(Level.WARNING, "Unable to decode query parameters: {}", e);
+      }
+
+      org.apache.olingo.commons.api.data.Parameter parameter = new org.apache.olingo.commons.api.data.Parameter();
+      parameter.setName(key);
+      parameter.setValue(ValueType.PRIMITIVE, value);
+      resultParameters.put(key, parameter);
+    }
+    return resultParameters;
   }
 
   public void performAction(final ODataRequest request, final ODataResponse response, final ContentType requestFormat)
@@ -50,8 +89,10 @@ public class JPAActionRequestProcessor extends JPAOperationRequestProcessor {
       final Parameter[] methodParameter = jpaAction.getMethod().getParameters();
 
       final ODataDeserializer deserializer = odata.createDeserializer(requestFormat);
-      final Map<String, org.apache.olingo.commons.api.data.Parameter> actionParameter =
+      Map<String, org.apache.olingo.commons.api.data.Parameter> actionParameter =
           deserializer.actionParameters(request.getBody(), resource.getAction()).getActionParameters();
+
+      actionParameter = bindRequestQueryParameters(request, actionParameter);
 
       for (int i = 0; i < methodParameter.length; i++) {
         final Parameter declairedParameter = methodParameter[i];

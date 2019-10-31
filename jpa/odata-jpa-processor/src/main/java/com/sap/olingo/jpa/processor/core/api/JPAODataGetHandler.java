@@ -1,5 +1,7 @@
 package com.sap.olingo.jpa.processor.core.api;
 
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Optional;
 
 import javax.persistence.EntityManager;
@@ -10,6 +12,7 @@ import javax.servlet.http.HttpServletResponse;
 import javax.sql.DataSource;
 
 import org.apache.olingo.commons.api.ex.ODataException;
+import org.apache.olingo.commons.api.format.ContentType;
 import org.apache.olingo.server.api.OData;
 import org.apache.olingo.server.api.ODataHttpHandler;
 import org.apache.olingo.server.api.debug.DebugSupport;
@@ -17,7 +20,13 @@ import org.apache.olingo.server.api.debug.DebugSupport;
 import com.sap.olingo.jpa.metadata.api.JPAEdmProvider;
 import com.sap.olingo.jpa.metadata.api.JPAEntityManagerFactory;
 import com.sap.olingo.jpa.processor.core.processor.JPAODataRequestContextImpl;
+import org.apache.olingo.server.api.serializer.CustomContentTypeSupport;
+import org.apache.olingo.server.api.serializer.RepresentationType;
 
+/**
+ * We have overwritten this class to implement new features. Currently, the following changes exist:
+ * BAO-609: register custom content type application/zip
+ */
 public class JPAODataGetHandler {
   public final Optional<EntityManagerFactory> emf;
   private final JPAODataServiceContext serviceContext;
@@ -145,6 +154,14 @@ public class JPAODataGetHandler {
     handler.register(new JPAODataBatchProcessor(requestContext));
     handler.register(serviceContext.getEdmProvider().getServiceDocument());
     handler.register(serviceContext.getErrorProcessor());
+    handler.register(new CustomContentTypeSupport() {
+      @Override
+      public List<ContentType> modifySupportedContentTypes(List<ContentType> list, RepresentationType representationType) {
+        List<ContentType> modifiedContentTypes = new ArrayList<>(list);
+        modifiedContentTypes.add(ContentType.create("application/zip"));
+        return modifiedContentTypes;
+      }
+    });
     handler.process(request, response);
   }
 
